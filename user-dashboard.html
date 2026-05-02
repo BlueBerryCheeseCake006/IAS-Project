@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Code Breaker | User Dash</title>
+    <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body class="app-shell">
+    <div class="container dashboard-container page-shell">
+        <h2>Welcome, <span id="displayUser"></span></h2>
+        <p>Clearance Level: STANDARD USER</p>
+
+        <div id="userNotice" class="success-msg"></div>
+
+        <div class="page-grid">
+            <div class="stat-card">
+                <span class="stat-label">Security Status</span>
+                <div class="stat-value" id="securityStatus">Active</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Current Device</span>
+                <div class="stat-value" id="currentDevice">Unknown</div>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Other Sessions</span>
+                <div class="stat-value" id="otherSessionCount">0</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="section-card">
+                <h3>Security Settings</h3>
+                <form id="passwordChangeForm" class="inline-form" style="margin-top: 16px;">
+                    <div class="form-group">
+                        <label>Current Password</label>
+                        <input type="password" id="currentPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label>New Password</label>
+                        <input type="password" id="newPassword" required>
+                        <div class="meter-shell" style="margin-top: 10px;">
+                            <div class="meter-track"><div id="newPasswordMeter" class="meter-fill weak"></div></div>
+                            <div id="newPasswordStrengthText" class="meter-label">Password strength: weak</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm New Password</label>
+                        <input type="password" id="confirmNewPassword" required>
+                    </div>
+                    <button type="submit">Update Password</button>
+                    <div id="passwordChangeError" class="error-msg"></div>
+                    <div id="passwordChangeSuccess" class="success-msg"></div>
+                </form>
+
+                <div class="split-line"></div>
+
+                <h3>2FA Preferences</h3>
+                <div class="toggle-row">
+                    <div>
+                        <p style="margin-bottom: 6px;">Email OTP on login</p>
+                        <p style="font-size: 14px; color: var(--text-muted);">Toggle this to require a verification code after password entry.</p>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="twoFactorToggle">
+                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                        <span id="twoFactorLabel">Enabled</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="section-card">
+                <h3>Active Sessions</h3>
+                <p style="margin-top: 12px;">
+                    <span class="badge">Current Device</span>
+                    <strong id="currentDeviceSummary">Unknown</strong>
+                </p>
+                <p id="otherSessionSummary" style="margin-top: 12px;">No other sessions detected.</p>
+                <button type="button" class="secondary" id="signOutOtherSessionsBtn" style="margin-top: 16px;">Sign out of all other sessions</button>
+            </div>
+        </div>
+
+        <div class="section-card">
+            <h3>Personal Audit Log</h3>
+            <p style="margin-top: 8px;">Last 5 login attempts for this account.</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Event</th>
+                    </tr>
+                </thead>
+                <tbody id="auditLogBody"></tbody>
+            </table>
+        </div>
+
+        <button class="danger" onclick="logout()" style="width: 220px; margin-top: 30px;">Secure Logout</button>
+    </div>
+
+    <script src="assets/js/session.js"></script>
+    <script src="assets/js/logger.js"></script>
+    <script src="assets/js/password-ui.js"></script>
+    <script src="assets/js/dashboard.js"></script>
+    <script>
+        const user = enforceSession('user');
+        if (user) document.getElementById('displayUser').innerText = user.username;
+    </script>
+</body>
+</html>
