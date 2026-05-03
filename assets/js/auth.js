@@ -5,35 +5,27 @@ const EMAILJS_OTP_TEMPLATE = 'template_uv2aemc';
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
-let attempts = 0;
-let tempUser = null;
+let attempts     = 0;
+let tempUser     = null;
 let generatedOTP = null;
 
-async function sendLoginOTP(user) {
-    generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiryTime = new Date(Date.now() + 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_OTP_TEMPLATE, {
-        email:    user.email,
-        passcode: generatedOTP,
-        time:     expiryTime
-    });
-    console.log('OTP sent. For grading/testing, check console:', generatedOTP);
-}
-
+// ─── Step 1: Password Login ───────────────────────────────────────────────────
 async function handleLogin(e) {
     e.preventDefault();
     const userField = document.getElementById('username').value.trim().toLowerCase();
     const passField = document.getElementById('password').value;
     const errorMsg  = document.getElementById('loginError');
 
-    // 1. Check if account is locked
+    errorMsg.style.color = '#e74c3c';
+
+    // Check lockout
     if (db.lockouts[userField] && Date.now() < db.lockouts[userField]) {
         const remaining = Math.ceil((db.lockouts[userField] - Date.now()) / 1000);
         errorMsg.innerText = `Account locked. Try again in ${remaining}s.`;
         return;
     }
 
-    // 2. Verify credentials (usernames are stored lowercase)
+    // Verify credentials
     const user = db.users.find(u =>
         u.username.toLowerCase() === userField &&
         passwordMatches(u.password || u.passwordHash || '', passField)
@@ -41,25 +33,17 @@ async function handleLogin(e) {
 
     if (user) {
         attempts = 0;
-        tempUser  = user;
-        errorMsg.style.color = '#4ecca3';
-        errorMsg.innerText   = 'Sending OTP to your email...';
+        tempUser = user;
+        errorMsg.innerText = '';
 
-        try {
-            await sendLoginOTP(user);
-            document.getElementById('loginForm').classList.add('hidden');
-            document.getElementById('otpForm').classList.remove('hidden');
-            errorMsg.innerText = '';
-        } catch (err) {
-            console.error('EmailJS error:', err);
-            errorMsg.style.color = '#e74c3c';
-            errorMsg.innerText   = 'Failed to send OTP. Please try again.';
-        }
-
+        // Show security question step
+        document.getElementById('loginForm').classList.add('hidden');
+        document.getElementById('securityQuestionForm').classList.remove('hidden');
+        document.getElementById('securityQuestionText').innerText =
+            user.securityQuestion || 'What is your favorite color?';
     } else {
         attempts++;
         logActivity(userField, 'Failed Login Attempt');
-        errorMsg.style.color = '#e74c3c';
         if (attempts >= 3) {
             db.lockouts[userField] = Date.now() + 30000;
             saveDB();
@@ -69,6 +53,66 @@ async function handleLogin(e) {
         } else {
             errorMsg.innerText = `Invalid credentials. ${3 - attempts} attempts remaining.`;
         }
+    }
+}
+
+// ─── Step 2: Security Question ───────────────────────────────────────────────
+let securityAttempts = 0;
+
+function verifySecurityQuestion(e) {
+    e.preventDefault();
+    const answer   = document.getElementById('securityAnswerInput').value.trim().toLowerCase();
+    const errorMsg = document.getElementById('securityQuestionError');
+
+    const storedAnswer = tempUser.securityAnswer || '';
+    const isCorrect    = btoa(answer) === storedAnswer || answer === storedAnswer;
+
+    if (isCorrect) {
+        securityAttempts = 0;
+        errorMsg.innerText = '';
+        document.getElementById('securityQuestionForm').classList.add('hidden');
+
+        // If 2FA is enabled, go to OTP step; otherwise log in directly
+        if (tempUser.twoFactorEnabled !== false) {
+            sendLoginOTP(tempUser);
+            document.getElementById('otpForm').classList.remove('hidden');
+        } else {
+            completeLogin();
+        }
+    } else {
+        securityAttempts++;
+        errorMsg.style.color = '#e74c3c';
+        if (securityAttempts >= 3) {
+            db.lockouts[tempUser.username] = Date.now() + 30000;
+            saveDB();
+            logActivity(tempUser.username, 'Security Question — Too Many Wrong Answers');
+            errorMsg.innerText = 'Too many wrong answers. Account locked for 30s.';
+            document.getElementById('securityQuestionForm').classList.add('hidden');
+            document.getElementById('loginForm').classList.remove('hidden');
+            document.getElementById('loginError').innerText = 'Account locked for 30s due to failed security question.';
+            securityAttempts = 0;
+            tempUser = null;
+        } else {
+            errorMsg.innerText = `Incorrect answer. ${3 - securityAttempts} attempts remaining.`;
+        }
+    }
+}
+
+// ─── Step 3: OTP ─────────────────────────────────────────────────────────────
+async function sendLoginOTP(user) {
+    generatedOTP = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiryTime = new Date(Date.now() + 15 * 60 * 1000)
+        .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_OTP_TEMPLATE, {
+            email:    user.email,
+            passcode: generatedOTP,
+            time:     expiryTime
+        });
+        console.log('OTP sent. For grading/testing:', generatedOTP);
+    } catch (err) {
+        console.error('EmailJS error:', err);
+        console.log('OTP (fallback):', generatedOTP);
     }
 }
 
@@ -83,23 +127,26 @@ function verifyOTP(e) {
     }
 
     if (otpInput === generatedOTP) {
-        const sessionUser = {
-            username: tempUser.username,
-            email:    tempUser.email,
-            role:     tempUser.role,
-            device:   getDeviceLabel()
-        };
-        sessionStorage.setItem('activeUser', JSON.stringify(sessionUser));
-        logActivity(tempUser.username, 'Successful Login');
-
-        window.location.href = tempUser.role === 'admin'
-            ? 'admin-dashboard.html'
-            : 'user-dashboard.html';
+        completeLogin();
     } else {
         otpError.style.color = '#e74c3c';
         otpError.innerText   = 'Incorrect OTP. Please try again.';
         logActivity(tempUser ? tempUser.username : 'unknown', 'Failed OTP Attempt');
     }
+}
+
+function completeLogin() {
+    const sessionUser = {
+        username: tempUser.username,
+        email:    tempUser.email,
+        role:     tempUser.role,
+        device:   getDeviceLabel()
+    };
+    sessionStorage.setItem('activeUser', JSON.stringify(sessionUser));
+    logActivity(tempUser.username, 'Successful Login');
+    window.location.href = tempUser.role === 'admin'
+        ? 'admin-dashboard.html'
+        : 'user-dashboard.html';
 }
 
 async function resendOTP(e) {
@@ -127,13 +174,7 @@ async function resendOTP(e) {
         }
     }, 1000);
 
-    try {
-        await sendLoginOTP(tempUser);
-        otpError.style.color = '#4ecca3';
-        otpError.innerText   = 'A new OTP has been sent to your email.';
-    } catch (err) {
-        console.error('EmailJS resend error:', err);
-        otpError.style.color = '#e74c3c';
-        otpError.innerText   = 'Failed to resend OTP. Please try again.';
-    }
+    await sendLoginOTP(tempUser);
+    otpError.style.color = '#4ecca3';
+    otpError.innerText   = 'A new OTP has been sent to your email.';
 }

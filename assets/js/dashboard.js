@@ -1,252 +1,321 @@
 // assets/js/dashboard.js
 let adminLogFiltersBound = false;
+let userToDelete = null;
+
+// ─── USER DASHBOARD ───────────────────────────────────────────────────────────
 
 function renderUserAuditLog(username) {
     const auditBody = document.getElementById('auditLogBody');
-    if (!auditBody) {
-        return;
-    }
+    if (!auditBody) return;
 
-    const auditLogs = db.logs
-        .filter((log) => log.username === username && (log.status.toLowerCase().includes('login') || log.status.toLowerCase().includes('otp')))
-        .slice()
-        .sort((left, right) => (right.time || 0) - (left.time || 0))
+    const logs = db.logs
+        .filter(l => l.username === username &&
+            (l.status.toLowerCase().includes('login') || l.status.toLowerCase().includes('otp')))
+        .sort((a, b) => (b.time || 0) - (a.time || 0))
         .slice(0, 5);
 
-    if (!auditLogs.length) {
-        auditBody.innerHTML = '<tr><td colspan="2">No login history yet.</td></tr>';
-        return;
-    }
+    auditBody.innerHTML = logs.length
+        ? logs.map(l => `<tr><td>${escapeHtml(l.timestamp)}</td><td>${escapeHtml(l.status)}</td></tr>`).join('')
+        : '<tr><td colspan="2">No login history yet.</td></tr>';
+}
 
-    auditBody.innerHTML = auditLogs.map((log) => `
-        <tr>
-            <td>${escapeHtml(log.timestamp)}</td>
-            <td>${escapeHtml(log.status)}</td>
-        </tr>
-    `).join('');
+function renderUserProfile(user) {
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+    set('profileUsername',        user.username);
+    set('profileEmail',           user.email);
+    set('profileRole',            user.role === 'admin' ? 'Administrator' : 'Standard User');
+    set('profileTwoFactor',       user.twoFactorEnabled !== false ? '✔ Enabled' : '✘ Disabled');
+    set('profileSecurityQuestion', user.securityQuestion || 'Not set');
 }
 
 function renderUserDashboard() {
     const activeSession = enforceSession('user');
-    if (!activeSession) {
-        return;
-    }
+    if (!activeSession) return;
 
     const user = findUserByUsername(activeSession.username);
-    if (!user) {
-        return;
-    }
+    if (!user) return;
 
     const notice = consumeSessionNotice();
     const userNotice = document.getElementById('userNotice');
-    if (userNotice && notice) {
-        userNotice.innerText = notice;
-    }
+    if (userNotice && notice) userNotice.innerText = notice;
 
-    const currentDevice = user.sessionInfo?.currentDevice || 'Unknown';
-    const otherSessions = Array.isArray(user.sessionInfo?.otherSessions) ? user.sessionInfo.otherSessions : [];
+    const currentDevice   = user.sessionInfo?.currentDevice || 'Unknown';
+    const otherSessions   = Array.isArray(user.sessionInfo?.otherSessions) ? user.sessionInfo.otherSessions : [];
 
-    document.getElementById('currentDevice').innerText = currentDevice;
+    document.getElementById('currentDevice').innerText        = currentDevice;
     document.getElementById('currentDeviceSummary').innerText = currentDevice;
-    document.getElementById('otherSessionCount').innerText = String(otherSessions.length);
-    document.getElementById('otherSessionSummary').innerText = otherSessions.length
+    document.getElementById('otherSessionCount').innerText    = String(otherSessions.length);
+    document.getElementById('otherSessionSummary').innerText  = otherSessions.length
         ? `Other sessions: ${otherSessions.join(', ')}`
         : 'No other sessions detected.';
 
-    const twoFactorToggle = document.getElementById('twoFactorToggle');
-    const twoFactorLabel = document.getElementById('twoFactorLabel');
-    twoFactorToggle.checked = user.twoFactorEnabled !== false;
-    twoFactorLabel.innerText = user.twoFactorEnabled !== false ? 'Enabled' : 'Disabled';
-
+    renderUserProfile(user);
     renderUserAuditLog(user.username);
+
+    // 2FA toggle
+    const twoFactorToggle = document.getElementById('twoFactorToggle');
+    const twoFactorLabel  = document.getElementById('twoFactorLabel');
+    twoFactorToggle.checked  = user.twoFactorEnabled !== false;
+    twoFactorLabel.innerText = user.twoFactorEnabled !== false ? 'Enabled' : 'Disabled';
 
     twoFactorToggle.addEventListener('change', () => {
         user.twoFactorEnabled = twoFactorToggle.checked;
         saveDB();
-        logActivity(user.username, twoFactorToggle.checked ? 'Enabled 2FA Preferences' : 'Disabled 2FA Preferences');
+        logActivity(user.username, twoFactorToggle.checked ? 'Enabled 2FA' : 'Disabled 2FA');
         twoFactorLabel.innerText = twoFactorToggle.checked ? 'Enabled' : 'Disabled';
-        if (userNotice) {
-            userNotice.innerText = twoFactorToggle.checked ? 'Email OTP has been enabled.' : 'Email OTP has been disabled.';
-        }
+        renderUserProfile(user);
+        if (userNotice) userNotice.innerText = twoFactorToggle.checked ? 'Email OTP enabled.' : 'Email OTP disabled.';
     });
 
-    const passwordChangeForm = document.getElementById('passwordChangeForm');
-    passwordChangeForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const currentPassword = document.getElementById('currentPassword').value;
-        const newPassword = document.getElementById('newPassword').value;
-        const confirmPassword = document.getElementById('confirmNewPassword').value;
-        const errorNode = document.getElementById('passwordChangeError');
-        const successNode = document.getElementById('passwordChangeSuccess');
+    // Password change
+    document.getElementById('passwordChangeForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const current  = document.getElementById('currentPassword').value;
+        const next     = document.getElementById('newPassword').value;
+        const confirm  = document.getElementById('confirmNewPassword').value;
+        const errEl    = document.getElementById('passwordChangeError');
+        const okEl     = document.getElementById('passwordChangeSuccess');
+        errEl.innerText = '';
+        okEl.innerText  = '';
 
-        errorNode.innerText = '';
-        successNode.innerText = '';
-
-        if (!passwordMatches(user.password, currentPassword)) {
-            errorNode.innerText = 'Current password is incorrect.';
-            return;
+        if (!passwordMatches(user.password || user.passwordHash, current)) {
+            errEl.innerText = 'Current password is incorrect.'; return;
+        }
+        if (next !== confirm) {
+            errEl.innerText = 'New passwords do not match.'; return;
+        }
+        if (!isStrongPassword(next)) {
+            errEl.innerText = 'Password must be 8+ chars with uppercase, lowercase, and a number.'; return;
         }
 
-        if (newPassword !== confirmPassword) {
-            errorNode.innerText = 'New passwords do not match.';
-            return;
-        }
-
-        if (!isStrongPassword(newPassword)) {
-            errorNode.innerText = 'Password must be 8+ chars with uppercase, lowercase, and a number.';
-            return;
-        }
-
-        user.password = hashPassword(newPassword);
+        user.password     = hashPassword(next);
+        user.passwordHash = hashPassword(next);
         saveDB();
-        logActivity(user.username, 'Password Updated From Dashboard');
-
-        try {
-            const firebaseModule = await import('./firebase-config.js');
-            const authModule = await import('https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js');
-            const firestoreModule = await import('https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js');
-            const firebaseUser = firebaseModule.auth.currentUser;
-
-            if (firebaseUser && firebaseUser.email === user.email) {
-                const credential = authModule.EmailAuthProvider.credential(firebaseUser.email, currentPassword);
-                await authModule.reauthenticateWithCredential(firebaseUser, credential);
-                await authModule.updatePassword(firebaseUser, newPassword);
-            }
-
-            if (user.firestoreId) {
-                await firestoreModule.updateDoc(firestoreModule.doc(firebaseModule.db, 'users', user.firestoreId), {
-                    passwordHash: hashPassword(newPassword),
-                    updatedAt: new Date()
-                });
-            }
-        } catch (error) {
-            console.warn('Firebase password sync failed:', error);
-        }
-
-        successNode.innerText = 'Password updated successfully.';
-        passwordChangeForm.reset();
-        const meterFill = document.getElementById('newPasswordMeter');
-        const meterLabel = document.getElementById('newPasswordStrengthText');
-        if (meterFill && meterLabel) {
-            updatePasswordStrengthMeter(document.getElementById('newPassword'), meterFill, meterLabel);
-        }
+        logActivity(user.username, 'Password Changed');
+        okEl.innerText = 'Password updated successfully.';
+        e.target.reset();
     });
 
-    const signOutOtherSessionsBtn = document.getElementById('signOutOtherSessionsBtn');
-    signOutOtherSessionsBtn.addEventListener('click', () => {
+    // Sign out other sessions
+    document.getElementById('signOutOtherSessionsBtn').addEventListener('click', () => {
         user.sessionInfo.otherSessions = [];
         saveDB();
-        logActivity(user.username, 'Signed out of all other sessions');
-        document.getElementById('otherSessionCount').innerText = '0';
+        logActivity(user.username, 'Signed Out of All Other Sessions');
+        document.getElementById('otherSessionCount').innerText   = '0';
         document.getElementById('otherSessionSummary').innerText = 'No other sessions detected.';
-        if (userNotice) {
-            userNotice.innerText = 'Other sessions have been signed out.';
-        }
+        if (userNotice) userNotice.innerText = 'Other sessions have been signed out.';
     });
 }
 
-function renderAdminMetrics() {
-    const totalUsersMetric = document.getElementById('totalUsersMetric');
-    const lockedAccountsMetric = document.getElementById('lockedAccountsMetric');
-    const failedLoginsMetric = document.getElementById('failedLoginsMetric');
+// ─── ADMIN DASHBOARD ──────────────────────────────────────────────────────────
 
-    totalUsersMetric.innerText = String(db.users.length);
-    lockedAccountsMetric.innerText = String(Object.keys(db.lockouts).filter((username) => db.lockouts[username] > Date.now()).length);
-    failedLoginsMetric.innerText = String(getFailedLoginsLast24Hours());
+function renderAdminMetrics() {
+    document.getElementById('totalUsersMetric').innerText      = String(db.users.length);
+    document.getElementById('lockedAccountsMetric').innerText  = String(
+        Object.keys(db.lockouts).filter(u => db.lockouts[u] > Date.now()).length
+    );
+    document.getElementById('failedLoginsMetric').innerText    = String(getFailedLoginsLast24Hours());
 }
 
 function renderAdminUserManagement() {
     const body = document.getElementById('userManagementBody');
-    if (!body) {
-        return;
-    }
+    if (!body) return;
 
-    const rows = db.users.map((user) => {
-        const isLocked = Boolean(db.lockouts[user.username] && db.lockouts[user.username] > Date.now());
+    body.innerHTML = db.users.map(user => {
+        const isLocked         = Boolean(db.lockouts[user.username] && db.lockouts[user.username] > Date.now());
         const forceResetChecked = user.forcePasswordReset ? 'checked' : '';
-        const lockStatus = isLocked ? 'Locked' : 'Active';
+        const isAdmin          = user.username === 'admin';
+        const roleBadge        = user.role === 'admin'
+            ? `<span class="role-badge admin">Admin</span>`
+            : `<span class="role-badge user">User</span>`;
+
         return `
             <tr>
                 <td>${escapeHtml(user.username)}</td>
                 <td>${escapeHtml(user.email)}</td>
-                <td>${lockStatus}</td>
-                <td>${user.twoFactorEnabled !== false ? 'Enabled' : 'Disabled'}</td>
+                <td>${roleBadge}</td>
+                <td style="color:${isLocked ? 'var(--error)' : 'var(--success)'}">
+                    ${isLocked ? '🔒 Locked' : '✔ Active'}
+                </td>
+                <td>${user.twoFactorEnabled !== false ? 'On' : 'Off'}</td>
                 <td>
-                    <label class="toggle">
-                        <input type="checkbox" ${forceResetChecked} onchange="toggleForceReset('${escapeHtml(user.username)}', this.checked)">
+                    <label class="toggle" style="justify-content:center;">
+                        <input type="checkbox" ${forceResetChecked}
+                            onchange="toggleForceReset('${escapeHtml(user.username)}', this.checked)">
                         <span class="toggle-track"><span class="toggle-thumb"></span></span>
                         <span>${user.forcePasswordReset ? 'On' : 'Off'}</span>
                     </label>
                 </td>
-                <td>
-                    ${isLocked ? `<button type="button" class="secondary" onclick="unlockUser('${escapeHtml(user.username)}')">Unlock</button>` : '<span class="badge">No action needed</span>'}
+                <td style="display:flex; gap:8px; flex-wrap:wrap;">
+                    ${isLocked
+                        ? `<button type="button" class="secondary" style="width:auto;padding:6px 12px;"
+                               onclick="unlockUser('${escapeHtml(user.username)}')">Unlock</button>`
+                        : ''}
+                    ${!isAdmin
+                        ? `<button type="button" class="danger" style="width:auto;padding:6px 12px;"
+                               onclick="openDeleteModal('${escapeHtml(user.username)}')">Delete</button>`
+                        : '<span style="color:var(--text-muted);font-size:12px;">Protected</span>'}
                 </td>
-            </tr>
-        `;
+            </tr>`;
     }).join('');
-
-    body.innerHTML = rows;
 }
 
 function renderAdminLogs() {
-    const userFilter = document.getElementById('logUserFilter');
+    const userFilter  = document.getElementById('logUserFilter');
     const eventFilter = document.getElementById('logEventFilter');
 
-    const renderFilteredLogs = () => {
-        displayLogs({
-            username: userFilter.value,
-            eventType: eventFilter.value
-        });
-    };
+    const doRender = () => displayLogs({ username: userFilter.value, eventType: eventFilter.value });
 
     if (!adminLogFiltersBound) {
-        userFilter.addEventListener('input', renderFilteredLogs);
-        eventFilter.addEventListener('change', renderFilteredLogs);
+        userFilter.addEventListener('input', doRender);
+        eventFilter.addEventListener('change', doRender);
         document.getElementById('clearLogFiltersBtn').addEventListener('click', () => {
-            userFilter.value = '';
+            userFilter.value  = '';
             eventFilter.value = '';
-            renderFilteredLogs();
+            doRender();
         });
         adminLogFiltersBound = true;
     }
-
-    renderFilteredLogs();
+    doRender();
 }
 
-function toggleForceReset(username, shouldForceReset) {
-    const user = findUserByUsername(username);
-    if (!user) {
-        return;
+// ─── ADD USER ─────────────────────────────────────────────────────────────────
+
+function openAddUserModal() {
+    document.getElementById('newUserEmail').value    = '';
+    document.getElementById('newUserUsername').value = '';
+    document.getElementById('newUserPassword').value = '';
+    document.getElementById('newUserRole').value     = 'user';
+    document.getElementById('addUserError').innerText = '';
+    document.getElementById('addUserModal').classList.add('open');
+}
+
+function closeAddUserModal() {
+    document.getElementById('addUserModal').classList.remove('open');
+}
+
+function confirmAddUser() {
+    const email    = document.getElementById('newUserEmail').value.trim().toLowerCase();
+    const username = sanitizeTextInput(document.getElementById('newUserUsername').value).toLowerCase();
+    const password = document.getElementById('newUserPassword').value;
+    const role     = document.getElementById('newUserRole').value;
+    const errEl    = document.getElementById('addUserError');
+
+    errEl.innerText = '';
+
+    if (!email || !username || !password) {
+        errEl.innerText = 'All fields are required.'; return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errEl.innerText = 'Please enter a valid email address.'; return;
+    }
+    if (findUserByUsername(username)) {
+        errEl.innerText = 'That username is already taken.'; return;
+    }
+    if (db.users.find(u => u.email.toLowerCase() === email)) {
+        errEl.innerText = 'That email is already registered.'; return;
+    }
+    if (!isStrongPassword(password)) {
+        errEl.innerText = 'Password must be 8+ chars with uppercase, lowercase, and a number.'; return;
     }
 
-    user.forcePasswordReset = shouldForceReset;
+    const newUser = {
+        username,
+        email,
+        password:         hashPassword(password),
+        passwordHash:     hashPassword(password),
+        role,
+        twoFactorEnabled: true,
+        forcePasswordReset: false,
+        securityQuestion: 'What is your favorite color?',
+        securityAnswer:   btoa('admin'),
+        sessionInfo:      { currentDevice: 'Unknown', otherSessions: [] }
+    };
+
+    db.users.push(newUser);
     saveDB();
-    logActivity('admin', `${shouldForceReset ? 'Enabled' : 'Disabled'} force password reset for ${username}`);
-    renderAdminMetrics();
-    renderAdminUserManagement();
-    renderAdminLogs();
+    logActivity('admin', `Created account for ${username} (${role})`);
+
+    closeAddUserModal();
+    refreshAdminDashboard();
+
+    const notice = document.getElementById('adminNotice');
+    if (notice) notice.innerText = `User "${username}" created successfully.`;
+}
+
+// ─── DELETE USER ──────────────────────────────────────────────────────────────
+
+function openDeleteModal(username) {
+    userToDelete = username;
+    document.getElementById('deleteUserMsg').innerText =
+        `Are you sure you want to permanently delete "${username}"? This cannot be undone.`;
+    document.getElementById('deleteUserModal').classList.add('open');
+}
+
+function closeDeleteModal() {
+    userToDelete = null;
+    document.getElementById('deleteUserModal').classList.remove('open');
+}
+
+function confirmDeleteUser() {
+    if (!userToDelete) return;
+
+    const idx = db.users.findIndex(u => u.username === userToDelete);
+    if (idx !== -1) {
+        db.users.splice(idx, 1);
+        delete db.lockouts[userToDelete];
+        saveDB();
+        logActivity('admin', `Deleted account: ${userToDelete}`);
+    }
+
+    const notice = document.getElementById('adminNotice');
+    if (notice) notice.innerText = `User "${userToDelete}" has been deleted.`;
+
+    closeDeleteModal();
+    refreshAdminDashboard();
+}
+
+// ─── SHARED HELPERS ───────────────────────────────────────────────────────────
+
+function toggleForceReset(username, value) {
+    const user = findUserByUsername(username);
+    if (!user) return;
+    user.forcePasswordReset = value;
+    saveDB();
+    logActivity('admin', `${value ? 'Enabled' : 'Disabled'} force password reset for ${username}`);
+    refreshAdminDashboard();
 }
 
 function unlockUser(username) {
     delete db.lockouts[username];
     saveDB();
     logActivity('admin', `Unlocked ${username}`);
+    refreshAdminDashboard();
+    const notice = document.getElementById('adminNotice');
+    if (notice) notice.innerText = `${username} has been unlocked.`;
+}
+
+function refreshAdminDashboard() {
     renderAdminMetrics();
     renderAdminUserManagement();
     renderAdminLogs();
 }
 
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', () => {
+    // User dashboard
     if (document.getElementById('auditLogBody')) {
         renderUserDashboard();
     }
 
+    // Admin dashboard
     if (document.getElementById('userManagementBody')) {
         const adminSession = enforceSession('admin');
         if (adminSession) {
-            renderAdminMetrics();
-            renderAdminUserManagement();
-            renderAdminLogs();
+            const notice = consumeSessionNotice();
+            if (notice) document.getElementById('adminNotice').innerText = notice;
+            refreshAdminDashboard();
         }
     }
 });

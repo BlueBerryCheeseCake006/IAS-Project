@@ -12,6 +12,8 @@ function createDefaultUser(overrides = {}) {
         role: 'admin',
         twoFactorEnabled: true,
         forcePasswordReset: false,
+        securityQuestion: 'What is the name of this system?',
+        securityAnswer: btoa('codebreaker'),
         sessionInfo: {
             currentDevice: 'Windows / Chrome',
             otherSessions: []
@@ -64,10 +66,20 @@ if (!localStorage.getItem(DB_KEY)) {
 
 const db = normalizeDB(JSON.parse(localStorage.getItem(DB_KEY)));
 
-// Migration: update admin email if it still has the old default
+// Migration: update admin email and security question if still using old defaults
 const adminUser = db.users.find(u => u.username === 'admin');
-if (adminUser && adminUser.email !== 'nathanielrodrigueza3@gmail.com') {
-    adminUser.email = 'nathanielrodrigueza3@gmail.com';
+if (adminUser) {
+    if (adminUser.email !== 'nathanielrodrigueza3@gmail.com') {
+        adminUser.email = 'nathanielrodrigueza3@gmail.com';
+    }
+    if (adminUser.securityAnswerHash && !adminUser.securityAnswer) {
+        adminUser.securityAnswer = adminUser.securityAnswerHash;
+        delete adminUser.securityAnswerHash;
+    }
+    if (!adminUser.securityQuestion) {
+        adminUser.securityQuestion = 'What is the name of this system?';
+        adminUser.securityAnswer   = btoa('codebreaker');
+    }
     localStorage.setItem(DB_KEY, JSON.stringify(db));
 }
 

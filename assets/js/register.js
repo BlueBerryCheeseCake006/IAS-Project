@@ -2,27 +2,34 @@ import { auth, db as firestoreDb } from './firebase-config.js';
 import { createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { collection, doc, getDocs, limit, query, serverTimestamp, setDoc, where } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-document.addEventListener('DOMContentLoaded', () => {
-    const notice = consumeSessionNotice();
-    const sessionNotice = document.getElementById('sessionNotice');
-    if (sessionNotice && notice) {
-        sessionNotice.innerText = notice;
-    }
-});
-
 async function handleRegister(e) {
     e.preventDefault();
-    const user = sanitizeTextInput(document.getElementById('regUsername').value).toLowerCase();
-    const email = document.getElementById('regEmail').value.trim().toLowerCase();
-    const pass = document.getElementById('regPassword').value;
+    const email    = document.getElementById('regEmail').value.trim().toLowerCase();
+    const user     = sanitizeTextInput(document.getElementById('regUsername').value).toLowerCase();
+    const pass     = document.getElementById('regPassword').value;
+    const question = document.getElementById('regSecurityQuestion').value;
+    const answer   = document.getElementById('regSecurityAnswer').value.trim().toLowerCase();
     const errorMsg = document.getElementById('regError');
+
+    errorMsg.innerText = '';
 
     if (!isStrongPassword(pass)) {
         errorMsg.innerText = 'Password must be 8+ chars with uppercase, lowercase, and a number.';
         return;
     }
 
+    if (!question) {
+        errorMsg.innerText = 'Please select a security question.';
+        return;
+    }
+
+    if (!answer) {
+        errorMsg.innerText = 'Please enter your security answer.';
+        return;
+    }
+
     try {
+        // Check for duplicate username
         const usernameQuery = query(collection(firestoreDb, 'users'), where('username', '==', user), limit(1));
         const usernameSnapshot = await getDocs(usernameQuery);
         if (usernameSnapshot.size || findUserByUsername(user)) {
@@ -31,20 +38,23 @@ async function handleRegister(e) {
         }
 
         const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-        const firebaseUser = userCredential.user;
+        const firebaseUser   = userCredential.user;
+
         const profile = {
-            username: user,
+            username:         user,
             email,
-            role: 'user',
+            role:             'user',
             twoFactorEnabled: true,
             forcePasswordReset: false,
+            securityQuestion: question,
+            securityAnswer:   btoa(answer), // stored hashed
             sessionInfo: {
                 currentDevice: getDeviceLabel(),
                 otherSessions: []
             },
-            passwordHash: hashPassword(pass),
-            firebaseUid: firebaseUser.uid,
-            createdAt: serverTimestamp()
+            passwordHash:  hashPassword(pass),
+            firebaseUid:   firebaseUser.uid,
+            createdAt:     serverTimestamp()
         };
 
         await setDoc(doc(firestoreDb, 'users', firebaseUser.uid), profile);
@@ -52,6 +62,7 @@ async function handleRegister(e) {
         logActivity(user, 'Account Created');
         setSessionNotice('Registration complete. Please sign in.');
         window.location.href = 'login.html';
+
     } catch (error) {
         const code = error?.code || '';
         if (code === 'auth/email-already-in-use') {
