@@ -25,7 +25,7 @@ function renderUserProfile(user) {
     set('profileEmail',           user.email);
     set('profileRole',            user.role === 'admin' ? 'Administrator' : 'Standard User');
     set('profileTwoFactor',       user.twoFactorEnabled !== false ? '✔ Enabled' : '✘ Disabled');
-    set('profileSecurityQuestion', user.securityQuestion || 'Not set');
+    set('profileSecurityQuestion', user.securityQuestion || '⚠ Not set — add one below for extra protection');
 }
 
 function renderUserDashboard() {
@@ -96,8 +96,39 @@ function renderUserDashboard() {
         e.target.reset();
     });
 
-    // Sign out other sessions
-    document.getElementById('signOutOtherSessionsBtn').addEventListener('click', () => {
+    // Security question setup
+    const sqForm = document.getElementById('securityQuestionForm');
+    if (sqForm) {
+        const sqSelect = document.getElementById('sqSelect');
+        const sqAnswer = document.getElementById('sqAnswer');
+        const sqError  = document.getElementById('sqError');
+        const sqSuccess= document.getElementById('sqSuccess');
+
+        // Pre-fill if already set
+        if (user.securityQuestion) {
+            Array.from(sqSelect.options).forEach(opt => {
+                if (opt.value === user.securityQuestion) opt.selected = true;
+            });
+        }
+
+        sqForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            sqError.innerText  = '';
+            sqSuccess.innerText= '';
+            const q = sqSelect.value;
+            const a = sqAnswer.value.trim().toLowerCase();
+            if (!q)  { sqError.innerText = 'Please select a question.'; return; }
+            if (!a)  { sqError.innerText = 'Please enter your answer.'; return; }
+
+            user.securityQuestion = q;
+            user.securityAnswer   = btoa(a);
+            saveDB();
+            logActivity(user.username, 'Updated Security Question');
+            sqAnswer.value   = '';
+            sqSuccess.innerText = 'Security question saved successfully.';
+            renderUserProfile(user);
+        });
+    }
         user.sessionInfo.otherSessions = [];
         saveDB();
         logActivity(user.username, 'Signed Out of All Other Sessions');
@@ -222,14 +253,14 @@ function confirmAddUser() {
     const newUser = {
         username,
         email,
-        password:         hashPassword(password),
-        passwordHash:     hashPassword(password),
+        password:           hashPassword(password),
+        passwordHash:       hashPassword(password),
         role,
-        twoFactorEnabled: true,
+        twoFactorEnabled:   true,
         forcePasswordReset: false,
-        securityQuestion: 'What is your favorite color?',
-        securityAnswer:   btoa('admin'),
-        sessionInfo:      { currentDevice: 'Unknown', otherSessions: [] }
+        securityQuestion:   '',
+        securityAnswer:     '',
+        sessionInfo:        { currentDevice: 'Unknown', otherSessions: [] }
     };
 
     db.users.push(newUser);
@@ -295,6 +326,45 @@ function unlockUser(username) {
     if (notice) notice.innerText = `${username} has been unlocked.`;
 }
 
+function setupAdminSecurityQuestion(adminSession) {
+    const admin = findUserByUsername(adminSession.username);
+    if (!admin) return;
+
+    const sqDisplay = document.getElementById('adminSqDisplay');
+    if (sqDisplay) sqDisplay.innerText = admin.securityQuestion || 'Not set';
+
+    const sqForm = document.getElementById('adminSqForm');
+    if (!sqForm) return;
+
+    const sqSelect = document.getElementById('adminSqSelect');
+    if (admin.securityQuestion) {
+        Array.from(sqSelect.options).forEach(opt => {
+            if (opt.value === admin.securityQuestion) opt.selected = true;
+        });
+    }
+
+    sqForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const q = document.getElementById('adminSqSelect').value;
+        const a = document.getElementById('adminSqAnswer').value.trim().toLowerCase();
+        const errEl = document.getElementById('adminSqError');
+        const okEl  = document.getElementById('adminSqSuccess');
+        errEl.innerText = '';
+        okEl.innerText  = '';
+
+        if (!q) { errEl.innerText = 'Please select a question.'; return; }
+        if (!a) { errEl.innerText = 'Please enter your answer.'; return; }
+
+        admin.securityQuestion = q;
+        admin.securityAnswer   = btoa(a);
+        saveDB();
+        logActivity(admin.username, 'Updated Security Question');
+        document.getElementById('adminSqAnswer').value = '';
+        document.getElementById('adminSqDisplay').innerText = q;
+        okEl.innerText = 'Security question saved successfully.';
+    });
+}
+
 function refreshAdminDashboard() {
     renderAdminMetrics();
     renderAdminUserManagement();
@@ -316,6 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const notice = consumeSessionNotice();
             if (notice) document.getElementById('adminNotice').innerText = notice;
             refreshAdminDashboard();
+            setupAdminSecurityQuestion(adminSession);
         }
     }
 });

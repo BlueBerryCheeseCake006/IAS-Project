@@ -27,9 +27,9 @@
                 </div>
             </div>
             <div class="form-group">
-                <label>Security Question</label>
-                <select id="regSecurityQuestion" required style="width:100%; padding:12px; border:1px solid #334155; border-radius:6px; background:#0f172a; color:white; font-size:15px;">
-                    <option value="">-- Select a question --</option>
+                <label>Security Question <span style="font-size:12px; color:var(--text-muted);">(optional — can be set later in dashboard)</span></label>
+                <select id="regSecurityQuestion" style="width:100%; padding:12px; border:1px solid #334155; border-radius:6px; background:#0f172a; color:white; font-size:15px;">
+                    <option value="">-- Skip for now --</option>
                     <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
                     <option value="What was the name of your first pet?">What was the name of your first pet?</option>
                     <option value="What city were you born in?">What city were you born in?</option>
@@ -38,9 +38,9 @@
                     <option value="What is your favorite movie?">What is your favorite movie?</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label>Security Answer <span style="font-size:12px; color:var(--text-muted);">(keep this private)</span></label>
-                <input type="text" id="regSecurityAnswer" required autocomplete="off">
+            <div class="form-group" id="securityAnswerGroup">
+                <label>Security Answer <span style="font-size:12px; color:var(--text-muted);">(required if question selected)</span></label>
+                <input type="text" id="regSecurityAnswer" autocomplete="off">
             </div>
             <button type="submit">Generate Credentials</button>
             <div id="regError" class="error-msg"></div>

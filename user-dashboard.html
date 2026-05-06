@@ -71,6 +71,31 @@
 
                     <div class="split-line"></div>
 
+                    <h3>Security Question <span style="font-size:13px; color:var(--text-muted); font-weight:400;">(optional — adds extra login protection)</span></h3>
+                    <form id="securityQuestionForm" style="margin-top:14px;">
+                        <div class="form-group">
+                            <label>Choose a Question</label>
+                            <select id="sqSelect" style="width:100%;padding:12px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:white;font-size:15px;">
+                                <option value="">-- Select a question --</option>
+                                <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
+                                <option value="What was the name of your first pet?">What was the name of your first pet?</option>
+                                <option value="What city were you born in?">What city were you born in?</option>
+                                <option value="What is your favorite color?">What is your favorite color?</option>
+                                <option value="What was the name of your elementary school?">What was the name of your elementary school?</option>
+                                <option value="What is your favorite movie?">What is your favorite movie?</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Your Answer</label>
+                            <input type="text" id="sqAnswer" autocomplete="off" placeholder="Enter your answer">
+                        </div>
+                        <button type="submit">Save Security Question</button>
+                        <div id="sqError" class="error-msg"></div>
+                        <div id="sqSuccess" class="success-msg"></div>
+                    </form>
+
+                    <div class="split-line"></div>
+
                     <h3>2FA Preferences</h3>
                     <div class="toggle-row">
                         <div>

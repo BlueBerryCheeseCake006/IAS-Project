@@ -18,13 +18,9 @@ async function handleRegister(e) {
         return;
     }
 
-    if (!question) {
-        errorMsg.innerText = 'Please select a security question.';
-        return;
-    }
-
-    if (!answer) {
-        errorMsg.innerText = 'Please enter your security answer.';
+    // Security question is optional — only validate answer if a question was chosen
+    if (question && !answer) {
+        errorMsg.innerText = 'Please enter your security answer, or skip the security question entirely.';
         return;
     }
 
@@ -46,8 +42,8 @@ async function handleRegister(e) {
             role:             'user',
             twoFactorEnabled: true,
             forcePasswordReset: false,
-            securityQuestion: question,
-            securityAnswer:   btoa(answer), // stored hashed
+            securityQuestion: question || '',
+            securityAnswer:   question && answer ? btoa(answer) : '',
             sessionInfo: {
                 currentDevice: getDeviceLabel(),
                 otherSessions: []

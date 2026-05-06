@@ -36,11 +36,22 @@ async function handleLogin(e) {
         tempUser = user;
         errorMsg.innerText = '';
 
-        // Show security question step
-        document.getElementById('loginForm').classList.add('hidden');
-        document.getElementById('securityQuestionForm').classList.remove('hidden');
-        document.getElementById('securityQuestionText').innerText =
-            user.securityQuestion || 'What is your favorite color?';
+        // If account has a security question set, show that step first
+        // Otherwise skip straight to OTP (or login directly if 2FA is off)
+        if (user.securityQuestion && user.securityAnswer) {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('securityQuestionForm').classList.remove('hidden');
+            document.getElementById('securityQuestionText').innerText = user.securityQuestion;
+        } else if (user.twoFactorEnabled !== false) {
+            document.getElementById('loginForm').classList.add('hidden');
+            errorMsg.style.color = '#4ecca3';
+            errorMsg.innerText   = 'Sending OTP to your email...';
+            await sendLoginOTP(user);
+            errorMsg.innerText = '';
+            document.getElementById('otpForm').classList.remove('hidden');
+        } else {
+            completeLogin();
+        }
     } else {
         attempts++;
         logActivity(userField, 'Failed Login Attempt');

@@ -58,6 +58,46 @@
             </table>
         </div>
 
+        <!-- Admin Account Settings -->
+        <div class="section-card">
+            <h3>My Account Settings</h3>
+            <div class="dashboard-grid" style="margin-top:16px;">
+                <div>
+                    <h3 style="font-size:15px; color:var(--text-muted); margin-bottom:12px;">Security Question <span style="font-size:12px;">(optional)</span></h3>
+                    <form id="adminSqForm">
+                        <div class="form-group">
+                            <label>Choose a Question</label>
+                            <select id="adminSqSelect" style="width:100%;padding:12px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:white;font-size:15px;">
+                                <option value="">-- Select a question --</option>
+                                <option value="What is your mother's maiden name?">What is your mother's maiden name?</option>
+                                <option value="What was the name of your first pet?">What was the name of your first pet?</option>
+                                <option value="What city were you born in?">What city were you born in?</option>
+                                <option value="What is your favorite color?">What is your favorite color?</option>
+                                <option value="What was the name of your elementary school?">What was the name of your elementary school?</option>
+                                <option value="What is your favorite movie?">What is your favorite movie?</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Your Answer</label>
+                            <input type="text" id="adminSqAnswer" autocomplete="off" placeholder="Enter your answer">
+                        </div>
+                        <button type="submit" style="width:auto;padding:10px 20px;">Save Question</button>
+                        <div id="adminSqError" class="error-msg"></div>
+                        <div id="adminSqSuccess" class="success-msg"></div>
+                    </form>
+                </div>
+                <div>
+                    <h3 style="font-size:15px; color:var(--text-muted); margin-bottom:12px;">Current Security Status</h3>
+                    <table>
+                        <tbody>
+                            <tr><td style="color:var(--text-muted);">Security Question</td><td id="adminSqDisplay">Not set</td></tr>
+                            <tr><td style="color:var(--text-muted);">2FA (Email OTP)</td><td style="color:var(--success);">✔ Always On</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Activity Logs -->
         <div class="section-card">
             <h3>System Activity Logs</h3>
