@@ -129,13 +129,18 @@ function renderUserDashboard() {
             renderUserProfile(user);
         });
     }
-        user.sessionInfo.otherSessions = [];
-        saveDB();
-        logActivity(user.username, 'Signed Out of All Other Sessions');
-        document.getElementById('otherSessionCount').innerText   = '0';
-        document.getElementById('otherSessionSummary').innerText = 'No other sessions detected.';
-        if (userNotice) userNotice.innerText = 'Other sessions have been signed out.';
-    });
+
+    const signOutOtherSessionsBtn = document.getElementById('signOutOtherSessionsBtn');
+    if (signOutOtherSessionsBtn) {
+        signOutOtherSessionsBtn.addEventListener('click', () => {
+            user.sessionInfo.otherSessions = [];
+            saveDB();
+            logActivity(user.username, 'Signed Out of All Other Sessions');
+            document.getElementById('otherSessionCount').innerText = '0';
+            document.getElementById('otherSessionSummary').innerText = 'No other sessions detected.';
+            if (userNotice) userNotice.innerText = 'Other sessions have been signed out.';
+        });
+    }
 }
 
 // ─── ADMIN DASHBOARD ──────────────────────────────────────────────────────────
